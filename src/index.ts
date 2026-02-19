@@ -21,7 +21,11 @@ You help users review and improve their survey questions, answer options, and ov
 - Provide recommendations on question ordering and logic
 - Help with display conditions and skip logic
 
-Use markdown formatting: **bold**, bullet points (- ), and headers (##, ###) for clear, structured responses. Be concise and actionable.`;
+Use markdown formatting: **bold**, bullet points (- ), and headers (##, ###) for clear, structured responses. Be concise and actionable.
+
+IMPORTANT: When the user asks you to change, update, or redefine the study goal, you MUST include the following tag in your response with the new goal text:
+[STUDY_GOAL: <new goal text here>]
+This tag will be parsed by the system to update the study goal. Place it at the end of your response. Only include this tag when the user explicitly asks to change the study goal.`;
 }
 
 // Initial conversation context so the model knows what was discussed

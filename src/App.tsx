@@ -129,6 +129,7 @@ export function App() {
         collapsed={leftPanelCollapsed}
         onCollapse={() => setLeftPanelCollapsed(true)}
         studyGoal={studyGoal}
+        onStudyGoalChange={setStudyGoal}
       />
       <RightPanel
         questions={questions}
@@ -170,10 +171,12 @@ function LeftPanel({
   collapsed,
   onCollapse,
   studyGoal,
+  onStudyGoalChange,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
   studyGoal: string;
+  onStudyGoalChange: (goal: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -262,6 +265,23 @@ function LeftPanel({
           }
         }
       }
+
+      // Extract [STUDY_GOAL: ...] tag from the final message
+      setMessages((prev) => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1]!;
+        if (last.role === "assistant") {
+          const match = last.content.match(/\[STUDY_GOAL:\s*(.*?)\]/);
+          if (match) {
+            onStudyGoalChange(match[1]!.trim());
+            updated[updated.length - 1] = {
+              ...last,
+              content: last.content.replace(/\[STUDY_GOAL:\s*.*?\]/, "").trim(),
+            };
+          }
+        }
+        return updated;
+      });
     } catch (err) {
       console.error("Chat error:", err);
       setMessages((prev) => {
