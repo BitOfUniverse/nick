@@ -183,6 +183,11 @@ function LeftPanel({
   messagesRef.current = messages;
   const isStreamingRef = useRef(isStreaming);
   isStreamingRef.current = isStreaming;
+  const chatInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    chatInputRef.current?.focus();
+  }, []);
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -337,6 +342,7 @@ function LeftPanel({
           style={{ border: `1px solid ${borderDefault}`, height: 48 }}
         >
           <input
+            ref={chatInputRef}
             type="text"
             placeholder="Ask almost anything"
             className="flex-1 bg-transparent outline-none text-sm"
