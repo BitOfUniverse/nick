@@ -152,6 +152,25 @@ export function App() {
             return next;
           });
         }}
+        onEditQuestions={(edits) => {
+          setQuestions((prev) =>
+            prev.map((q, i) => {
+              const edit = edits.find((e) => e.index === i);
+              if (!edit) return q;
+              return {
+                ...q,
+                ...(edit.text !== undefined && { text: edit.text }),
+                ...(edit.description !== undefined && { description: edit.description }),
+                ...(edit.required !== undefined && { required: edit.required }),
+                ...(edit.choices !== undefined && {
+                  choices: edit.choices.length > 0
+                    ? edit.choices.map((c) => ({ id: generateId(), text: c }))
+                    : [{ id: generateId(), text: "" }],
+                }),
+              };
+            }),
+          );
+        }}
       />
       <RightPanel
         questions={questions}
@@ -199,6 +218,7 @@ function LeftPanel({
   questions,
   onAddQuestions,
   onDeleteQuestions,
+  onEditQuestions,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
@@ -209,6 +229,7 @@ function LeftPanel({
   questions: SurveyQuestion[];
   onAddQuestions: (questions: SurveyQuestion[]) => void;
   onDeleteQuestions: (indices: number[]) => void;
+  onEditQuestions: (edits: { index: number; text?: string; description?: string; required?: boolean; choices?: string[] }[]) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -433,6 +454,38 @@ function LeftPanel({
 
           if (deleteIndices.length > 0) {
             onDeleteQuestions(deleteIndices);
+          }
+
+          // [EDIT_QUESTION: {...}] — may appear multiple times
+          const editQRegex = /\[EDIT_QUESTION:\s*(\{[\s\S]*?\})\s*\]/g;
+          const editOps: { index: number; text?: string; description?: string; required?: boolean; choices?: string[] }[] = [];
+          let eMatch;
+          while ((eMatch = editQRegex.exec(content)) !== null) {
+            try {
+              const parsed = JSON.parse(eMatch[1]!) as {
+                index?: number;
+                text?: string;
+                description?: string;
+                required?: boolean;
+                choices?: string[];
+              };
+              if (typeof parsed.index === "number" && parsed.index >= 1) {
+                editOps.push({
+                  index: parsed.index - 1, // convert 1-based to 0-based
+                  ...(parsed.text !== undefined && { text: parsed.text }),
+                  ...(parsed.description !== undefined && { description: parsed.description }),
+                  ...(parsed.required !== undefined && { required: parsed.required }),
+                  ...(parsed.choices !== undefined && { choices: parsed.choices }),
+                });
+              }
+            } catch {
+              // skip malformed JSON
+            }
+          }
+          content = content.replace(/\[EDIT_QUESTION:\s*\{[\s\S]*?\}\s*\]/g, "").trim();
+
+          if (editOps.length > 0) {
+            onEditQuestions(editOps);
           }
 
           updated[updated.length - 1] = { ...last, content };

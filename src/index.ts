@@ -33,6 +33,7 @@ You help users review and improve their survey questions, answer options, and ov
 - Help with display conditions and skip logic
 - Add new questions to the survey when asked
 - Delete questions from the survey when asked
+- Edit existing questions when asked
 
 Use markdown formatting: **bold**, bullet points (- ), and headers (##, ###) for clear, structured responses. Be concise and actionable.
 
@@ -61,7 +62,17 @@ Rules for DELETE_QUESTION:
 - Always confirm which question(s) you're deleting in your response text BEFORE the tags
 - Only include these tags when the user explicitly asks to delete, remove, or drop questions
 - Always describe the questions you're adding in your regular response text BEFORE the tags
-- Only include these tags when the user explicitly asks to add, create, or insert new questions`;
+- Only include these tags when the user explicitly asks to add, create, or insert new questions
+
+4. When the user asks you to EDIT, MODIFY, or UPDATE an existing question, include one tag per question:
+[EDIT_QUESTION: {"index": 1, "text": "New text", "description": "New desc", "required": true, "choices": ["A", "B"]}]
+
+Rules for EDIT_QUESTION:
+- "index" (number, required): 1-based question number from the current list above
+- "text", "description", "required", "choices" — all optional, only include fields that need to change
+- You may include multiple [EDIT_QUESTION: ...] tags to edit multiple questions at once
+- Always describe the changes you're making in your regular response text BEFORE the tags
+- Only include these tags when the user explicitly asks to edit, modify, change, or update existing questions`;
 }
 
 // Initial conversation context so the model knows what was discussed
