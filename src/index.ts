@@ -1,5 +1,6 @@
 import { serve } from "bun";
 import index from "./index.html";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -22,6 +23,8 @@ The study goal is: "${studyGoal}"
 Current survey questions:
 ${questionsList}
 
+IMPORTANT — FILE ATTACHMENTS: Users can attach files (.pdf, .txt, .md, .csv). When they do, the FULL TEXT CONTENT of each file is included directly in their message. The content appears between "--- START OF FILE: filename ---" and "--- END OF FILE ---" markers. This is NOT a reference or link — the actual file text is right there in the message. You MUST read it, use it, and reference it when responding. Never say you cannot access or read attached files.
+
 You help users review and improve their survey questions, answer options, and overall survey structure. You can:
 - Review and suggest improvements to survey questions
 - Recommend better answer options
@@ -29,6 +32,7 @@ You help users review and improve their survey questions, answer options, and ov
 - Provide recommendations on question ordering and logic
 - Help with display conditions and skip logic
 - Add new questions to the survey when asked
+- Delete questions from the survey when asked
 
 Use markdown formatting: **bold**, bullet points (- ), and headers (##, ###) for clear, structured responses. Be concise and actionable.
 
@@ -47,6 +51,15 @@ Rules for ADD_QUESTION:
 - "choices" (string array, optional): answer options. Omit or use empty array for open-ended questions
 - Output valid JSON inside the tag — no trailing commas, proper quoting
 - You may include multiple [ADD_QUESTION: ...] tags to add multiple questions at once
+
+3. When the user asks you to DELETE or REMOVE one or more questions, include one tag per question:
+[DELETE_QUESTION: <question number>]
+
+Rules for DELETE_QUESTION:
+- Use the 1-based question number from the current list above
+- You may include multiple [DELETE_QUESTION: ...] tags to delete multiple questions at once
+- Always confirm which question(s) you're deleting in your response text BEFORE the tags
+- Only include these tags when the user explicitly asks to delete, remove, or drop questions
 - Always describe the questions you're adding in your regular response text BEFORE the tags
 - Only include these tags when the user explicitly asks to add, create, or insert new questions`;
 }
@@ -89,6 +102,40 @@ Current options are logically ordered, but:
 const server = serve({
   routes: {
     "/*": index,
+
+    "/api/parse-file": {
+      async POST(req) {
+        try {
+          const formData = await req.formData();
+          const file = formData.get("file") as File | null;
+          if (!file) {
+            return new Response(JSON.stringify({ error: "No file provided" }), { status: 400 });
+          }
+
+          const name = file.name;
+          const ext = name.split(".").pop()?.toLowerCase();
+          let text: string;
+
+          if (ext === "pdf") {
+            const buffer = Buffer.from(await file.arrayBuffer());
+            const parsed = await pdfParse(buffer);
+            text = parsed.text;
+          } else {
+            text = await file.text();
+          }
+
+          // Truncate to ~50k chars to avoid token limits
+          if (text.length > 50000) {
+            text = text.slice(0, 50000) + "\n\n[...truncated, file too large]";
+          }
+
+          return Response.json({ name, text });
+        } catch (err) {
+          console.error("File parse error:", err);
+          return new Response(JSON.stringify({ error: "Failed to parse file" }), { status: 500 });
+        }
+      },
+    },
 
     "/api/chat": {
       async POST(req) {

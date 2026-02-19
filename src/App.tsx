@@ -27,6 +27,8 @@ import {
   HelpCircle,
   ClipboardList,
   Loader2,
+  X,
+  FileText,
 } from "lucide-react";
 
 /* ─── Design Tokens ─── */
@@ -42,6 +44,7 @@ const bgSecondary = "#F9F9F8";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachments?: { name: string; text: string }[];
 }
 
 interface Condition {
@@ -116,6 +119,7 @@ export function App() {
     initialQuestions[1]!.id,
   );
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(400);
   const [studyGoal, setStudyGoal] = useState(
     "The goal of this study is to understand why some creators delay or avoid sharing...",
   );
@@ -128,12 +132,25 @@ export function App() {
       <LeftPanel
         collapsed={leftPanelCollapsed}
         onCollapse={() => setLeftPanelCollapsed(true)}
+        width={leftPanelWidth}
+        onWidthChange={setLeftPanelWidth}
         studyGoal={studyGoal}
         onStudyGoalChange={setStudyGoal}
         questions={questions}
         onAddQuestions={(newQs) => {
           setQuestions((prev) => [...prev, ...newQs]);
           if (newQs.length > 0) setSelectedQuestionId(newQs[0]!.id);
+        }}
+        onDeleteQuestions={(indices) => {
+          setQuestions((prev) => {
+            const next = prev.filter((_, i) => !indices.includes(i));
+            if (next.length > 0 && !next.find((q) => q.id === selectedQuestionId)) {
+              setSelectedQuestionId(next[next.length - 1]!.id);
+            } else if (next.length === 0) {
+              setSelectedQuestionId(null);
+            }
+            return next;
+          });
         }}
       />
       <RightPanel
@@ -175,27 +192,35 @@ function CollapsedLeftPanel({ onExpand }: { onExpand: () => void }) {
 function LeftPanel({
   collapsed,
   onCollapse,
+  width,
+  onWidthChange,
   studyGoal,
   onStudyGoalChange,
   questions,
   onAddQuestions,
+  onDeleteQuestions,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
+  width: number;
+  onWidthChange: (w: number) => void;
   studyGoal: string;
   onStudyGoalChange: (goal: string) => void;
   questions: SurveyQuestion[];
   onAddQuestions: (questions: SurveyQuestion[]) => void;
+  onDeleteQuestions: (indices: number[]) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [attachments, setAttachments] = useState<{ name: string; text: string; error?: string }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const isStreamingRef = useRef(isStreaming);
   isStreamingRef.current = isStreaming;
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatInputRef.current?.focus();
@@ -211,25 +236,93 @@ function LeftPanel({
 
   useEffect(scrollToBottom, [messages]);
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const promises = Array.from(files).map(async (file) => {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      try {
+        if (ext === "pdf") {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/parse-file", { method: "POST", body: formData });
+          if (!res.ok) throw new Error("Failed to parse PDF");
+          const data = await res.json() as { name: string; text: string };
+          if (!data.text?.trim()) {
+            return { name: file.name, text: "", error: "No extractable text" };
+          }
+          return { name: data.name, text: data.text };
+        } else {
+          const text = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsText(file);
+          });
+          if (text.length > 50000) {
+            return { name: file.name, text: text.slice(0, 50000) + "\n\n[...truncated, file too large]" };
+          }
+          return { name: file.name, text };
+        }
+      } catch {
+        return { name: file.name, text: "", error: "Failed to read file" };
+      }
+    });
+
+    const results = await Promise.all(promises);
+    setAttachments((prev) => [...prev, ...results]);
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const sendMessage = async (textOverride?: string) => {
     const text = (textOverride ?? input).trim();
-    if (!text || isStreamingRef.current) return;
+    const validAttachments = attachments.filter((a) => !a.error && a.text);
+    if ((!text && validAttachments.length === 0) || isStreamingRef.current) return;
 
-    const userMsg: ChatMessage = { role: "user", content: text };
+    // Show attached filenames in the user bubble, store attachments on the message
+    const displayContent = validAttachments.length > 0
+      ? (validAttachments.map((a) => `[${a.name}]`).join(" ") + (text ? "\n" + text : ""))
+      : text;
+
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: displayContent,
+      attachments: validAttachments.length > 0
+        ? validAttachments.map((a) => ({ name: a.name, text: a.text }))
+        : undefined,
+    };
     const allMessages = [...messagesRef.current, userMsg];
     setMessages(allMessages);
     if (!textOverride) setInput("");
+    setAttachments([]);
     setIsStreaming(true);
 
     // Add placeholder assistant message
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    // Build API messages: augment any user message that has attachments with file text
+    const apiMessages = allMessages.map((m) => {
+      if (m.attachments && m.attachments.length > 0) {
+        const prefix = m.attachments
+          .map((a) => `--- START OF FILE: ${a.name} ---\n${a.text}\n--- END OF FILE ---`)
+          .join("\n\n");
+        return { role: m.role, content: prefix + "\n\n" + m.content };
+      }
+      return { role: m.role, content: m.content };
+    });
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+          messages: apiMessages,
           studyGoal,
           questions: questions.map((q) => ({
             text: q.text,
@@ -328,6 +421,20 @@ function LeftPanel({
             onAddQuestions(newQuestions);
           }
 
+          // [DELETE_QUESTION: <number>] — may appear multiple times
+          const deleteRegex = /\[DELETE_QUESTION:\s*(\d+)\s*\]/g;
+          const deleteIndices: number[] = [];
+          let dMatch;
+          while ((dMatch = deleteRegex.exec(content)) !== null) {
+            const idx = parseInt(dMatch[1]!, 10) - 1; // convert 1-based to 0-based
+            if (idx >= 0) deleteIndices.push(idx);
+          }
+          content = content.replace(/\[DELETE_QUESTION:\s*\d+\s*\]/g, "").trim();
+
+          if (deleteIndices.length > 0) {
+            onDeleteQuestions(deleteIndices);
+          }
+
           updated[updated.length - 1] = { ...last, content };
         }
         return updated;
@@ -357,16 +464,45 @@ function LeftPanel({
     }
   };
 
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const newWidth = Math.max(300, Math.min(700, startWidth + ev.clientX - startX));
+      onWidthChange(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
   return (
     <aside
-      className="flex flex-col h-screen bg-white"
+      className="relative flex flex-col h-screen bg-white shrink-0"
       style={{
-        width: 400,
-        minWidth: 400,
-        borderRight: `1px solid ${borderDefault}`,
+        width,
+        minWidth: 300,
+        maxWidth: 700,
         display: collapsed ? "none" : undefined,
       }}
     >
+      {/* Resize handle */}
+      <div
+        className="absolute top-0 right-0 h-full z-10"
+        style={{ width: 5, cursor: "col-resize", borderRight: `1px solid ${borderDefault}` }}
+        onMouseDown={handleDragStart}
+      />
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 shrink-0"
@@ -405,8 +541,43 @@ function LeftPanel({
         )}
       </div>
 
-      {/* Chat Input */}
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt,.md,.csv"
+        multiple
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+
+      {/* Attachment chips + Chat Input */}
       <div className="px-4 py-3 shrink-0" style={{ borderTop: `1px solid ${borderDefault}` }}>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {attachments.map((att, i) => (
+              <div
+                key={`${att.name}-${i}`}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs"
+                style={{
+                  background: att.error ? "#FEF2F2" : bgSecondary,
+                  border: `1px solid ${att.error ? "#FECACA" : borderDefault}`,
+                  color: att.error ? "#DC2626" : textPrimary,
+                }}
+              >
+                <FileText size={12} />
+                <span className="max-w-[120px] truncate">{att.name}</span>
+                {att.error && <span className="text-[10px] opacity-70">({att.error})</span>}
+                <button
+                  className="flex items-center justify-center cursor-pointer bg-transparent border-none p-0 ml-0.5"
+                  onClick={() => removeAttachment(i)}
+                >
+                  <X size={12} color={att.error ? "#DC2626" : textSecondary} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div
           className="flex items-center rounded-2xl px-4"
           style={{ border: `1px solid ${borderDefault}`, height: 48 }}
@@ -423,7 +594,12 @@ function LeftPanel({
             disabled={isStreaming}
           />
           <div className="flex items-center gap-3">
-            <Paperclip size={18} color={textSecondary} className="cursor-pointer" />
+            <Paperclip
+              size={18}
+              color={textSecondary}
+              className="cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            />
             <button
               className="flex items-center justify-center rounded-full cursor-pointer"
               style={{
