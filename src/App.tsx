@@ -46,10 +46,13 @@ interface ChatMessage {
 
 interface Condition {
   id: string;
+  sourceQuestionId: string;
   sourceQuestionLabel: string;
   operator: string;
   value: string;
 }
+
+const OPERATORS = ["=", "\u2260", "contains", "does not contain"];
 
 interface SurveyQuestion {
   id: string;
@@ -92,6 +95,7 @@ const initialQuestions: SurveyQuestion[] = [
     conditions: [
       {
         id: generateId(),
+        sourceQuestionId: "",
         sourceQuestionLabel: "Do you play music?",
         operator: "=",
         value: "Yes",
@@ -682,6 +686,7 @@ function RightPanel({
                 ...q.conditions,
                 {
                   id: generateId(),
+                  sourceQuestionId: "",
                   sourceQuestionLabel: "Select question",
                   operator: "=",
                   value: "Select value",
@@ -698,6 +703,25 @@ function RightPanel({
       prev.map((q) =>
         q.id === qId
           ? { ...q, conditions: q.conditions.filter((c) => c.id !== condId) }
+          : q,
+      ),
+    );
+  };
+
+  const handleUpdateCondition = (
+    qId: string,
+    condId: string,
+    updates: Partial<Condition>,
+  ) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === qId
+          ? {
+              ...q,
+              conditions: q.conditions.map((c) =>
+                c.id === condId ? { ...c, ...updates } : c,
+              ),
+            }
           : q,
       ),
     );
@@ -830,6 +854,7 @@ function RightPanel({
                 key={q.id}
                 question={q}
                 index={index}
+                allQuestions={questions}
                 onToggleRequired={() => handleToggleRequired(q.id)}
                 onUpdateText={(text) => handleUpdateText(q.id, text)}
                 onUpdateDescription={(desc) => handleUpdateDescription(q.id, desc)}
@@ -838,6 +863,7 @@ function RightPanel({
                 onDeleteChoice={(choiceId) => handleDeleteChoice(q.id, choiceId)}
                 onAddCondition={() => handleAddCondition(q.id)}
                 onDeleteCondition={(condId) => handleDeleteCondition(q.id, condId)}
+                onUpdateCondition={(condId, updates) => handleUpdateCondition(q.id, condId, updates)}
               />
             ) : (
               <CollapsedQuestion
@@ -885,6 +911,7 @@ function CollapsedQuestion({
 function ExpandedQuestion({
   question,
   index,
+  allQuestions,
   onToggleRequired,
   onUpdateText,
   onUpdateDescription,
@@ -893,9 +920,11 @@ function ExpandedQuestion({
   onDeleteChoice,
   onAddCondition,
   onDeleteCondition,
+  onUpdateCondition,
 }: {
   question: SurveyQuestion;
   index: number;
+  allQuestions: SurveyQuestion[];
   onToggleRequired: () => void;
   onUpdateText: (text: string) => void;
   onUpdateDescription: (desc: string) => void;
@@ -904,7 +933,30 @@ function ExpandedQuestion({
   onDeleteChoice: (choiceId: string) => void;
   onAddCondition: () => void;
   onDeleteCondition: (condId: string) => void;
+  onUpdateCondition: (condId: string, updates: Partial<Condition>) => void;
 }) {
+  // Build source question options (exclude current question)
+  const sourceQuestionOptions = allQuestions
+    .filter((q) => q.id !== question.id)
+    .map((q, i) => ({
+      label: `${allQuestions.indexOf(q) + 1}. ${q.text || "Untitled question"}`,
+      value: q.id,
+    }));
+
+  // Build value options based on selected source question's choices
+  const getValueOptions = (cond: Condition) => {
+    const sourceQ = allQuestions.find((q) => q.id === cond.sourceQuestionId);
+    const filledChoices = sourceQ?.choices.filter((c) => c.text.trim()) ?? [];
+    if (filledChoices.length > 0) {
+      return filledChoices.map((c) => ({ label: c.text, value: c.text }));
+    }
+    return [
+      { label: "Yes", value: "Yes" },
+      { label: "No", value: "No" },
+      { label: "Maybe", value: "Maybe" },
+    ];
+  };
+
   return (
     <div className="bg-white rounded-2xl" style={{ border: `2px solid ${textPrimary}` }}>
       {/* Header */}
@@ -942,18 +994,27 @@ function ExpandedQuestion({
         {question.conditions.map((cond) => (
           <div key={cond.id} className="flex items-center gap-3 flex-wrap mb-2">
             <span className="text-sm" style={{ color: textSecondary }}>Display when</span>
-            <DropdownPill>
-              <span className="text-sm" style={{ color: textPrimary }}>{cond.sourceQuestionLabel}</span>
-              <ChevronDown size={14} color={textSecondary} />
-            </DropdownPill>
-            <DropdownPill>
-              <span className="text-sm" style={{ color: textPrimary }}>{cond.operator}</span>
-              <ChevronDown size={14} color={textSecondary} />
-            </DropdownPill>
-            <DropdownPill>
-              <span className="text-sm" style={{ color: textPrimary }}>{cond.value}</span>
-              <ChevronDown size={14} color={textSecondary} />
-            </DropdownPill>
+            <DropdownSelect
+              value={cond.sourceQuestionLabel}
+              options={sourceQuestionOptions}
+              onSelect={(val) => {
+                const srcQ = allQuestions.find((q) => q.id === val);
+                onUpdateCondition(cond.id, {
+                  sourceQuestionId: val,
+                  sourceQuestionLabel: srcQ?.text || "Untitled question",
+                });
+              }}
+            />
+            <DropdownSelect
+              value={cond.operator}
+              options={OPERATORS.map((op) => ({ label: op, value: op }))}
+              onSelect={(val) => onUpdateCondition(cond.id, { operator: val })}
+            />
+            <DropdownSelect
+              value={cond.value}
+              options={getValueOptions(cond)}
+              onSelect={(val) => onUpdateCondition(cond.id, { value: val })}
+            />
             <Trash2
               size={16}
               color={textSecondary}
@@ -1081,6 +1142,93 @@ function DropdownPill({ children }: { children: React.ReactNode }) {
       style={{ border: `1px solid ${borderDefault}` }}
     >
       {children}
+    </div>
+  );
+}
+
+function DropdownSelect({
+  value,
+  options,
+  onSelect,
+}: {
+  value: string;
+  options: { label: string; value: string }[];
+  onSelect: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        className="inline-flex items-center gap-2 h-9 px-3 rounded-lg cursor-pointer"
+        style={{ border: `1px solid ${open ? textPrimary : borderDefault}` }}
+        onClick={() => setOpen(!open)}
+      >
+        <span
+          className="text-sm max-w-[180px] truncate"
+          style={{ color: textPrimary }}
+        >
+          {value}
+        </span>
+        <ChevronDown
+          size={14}
+          color={textSecondary}
+          style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform 0.15s" }}
+        />
+      </div>
+      {open && (
+        <div
+          className="absolute left-0 mt-1 bg-white rounded-lg shadow-lg overflow-hidden"
+          style={{
+            border: `1px solid ${borderDefault}`,
+            zIndex: 50,
+            minWidth: 180,
+            maxHeight: 220,
+            overflowY: "auto",
+          }}
+        >
+          {options.map((opt) => (
+            <div
+              key={opt.value}
+              className="px-3 py-2 text-sm cursor-pointer truncate"
+              style={{
+                color: opt.value === value || opt.label === value ? textPrimary : textSecondary,
+                background: opt.value === value || opt.label === value ? goldBgLight : undefined,
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background = goldBgLight;
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background =
+                  opt.value === value || opt.label === value ? goldBgLight : "transparent";
+              }}
+              onClick={() => {
+                onSelect(opt.value);
+                setOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+          {options.length === 0 && (
+            <div className="px-3 py-2 text-sm" style={{ color: textSecondary }}>
+              No options available
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
