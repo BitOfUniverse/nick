@@ -1,0 +1,17 @@
+@import "../styles/globals.css";
+
+@layer base {
+  :root {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    @apply m-0 p-0 bg-[#F9F9F8] text-[#082330] antialiased;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100vh;
+    width: 100vw;
+  }
+}
