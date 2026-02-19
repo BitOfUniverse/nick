@@ -130,6 +130,11 @@ export function App() {
         onCollapse={() => setLeftPanelCollapsed(true)}
         studyGoal={studyGoal}
         onStudyGoalChange={setStudyGoal}
+        questions={questions}
+        onAddQuestions={(newQs) => {
+          setQuestions((prev) => [...prev, ...newQs]);
+          if (newQs.length > 0) setSelectedQuestionId(newQs[0]!.id);
+        }}
       />
       <RightPanel
         questions={questions}
@@ -172,11 +177,15 @@ function LeftPanel({
   onCollapse,
   studyGoal,
   onStudyGoalChange,
+  questions,
+  onAddQuestions,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
   studyGoal: string;
   onStudyGoalChange: (goal: string) => void;
+  questions: SurveyQuestion[];
+  onAddQuestions: (questions: SurveyQuestion[]) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -222,6 +231,11 @@ function LeftPanel({
         body: JSON.stringify({
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
           studyGoal,
+          questions: questions.map((q) => ({
+            text: q.text,
+            description: q.description,
+            choices: q.choices.map((c) => c.text),
+          })),
         }),
       });
 
@@ -266,19 +280,55 @@ function LeftPanel({
         }
       }
 
-      // Extract [STUDY_GOAL: ...] tag from the final message
+      // Extract structured tags from the final message
       setMessages((prev) => {
         const updated = [...prev];
         const last = updated[updated.length - 1]!;
         if (last.role === "assistant") {
-          const match = last.content.match(/\[STUDY_GOAL:\s*(.*?)\]/);
-          if (match) {
-            onStudyGoalChange(match[1]!.trim());
-            updated[updated.length - 1] = {
-              ...last,
-              content: last.content.replace(/\[STUDY_GOAL:\s*.*?\]/, "").trim(),
-            };
+          let content = last.content;
+
+          // [STUDY_GOAL: ...]
+          const goalMatch = content.match(/\[STUDY_GOAL:\s*(.*?)\]/);
+          if (goalMatch) {
+            onStudyGoalChange(goalMatch[1]!.trim());
+            content = content.replace(/\[STUDY_GOAL:\s*.*?\]/, "").trim();
           }
+
+          // [ADD_QUESTION: {...}] — may appear multiple times
+          const addQRegex = /\[ADD_QUESTION:\s*(\{[\s\S]*?\})\s*\]/g;
+          const newQuestions: SurveyQuestion[] = [];
+          let qMatch;
+          while ((qMatch = addQRegex.exec(content)) !== null) {
+            try {
+              const parsed = JSON.parse(qMatch[1]!) as {
+                text?: string;
+                description?: string;
+                required?: boolean;
+                choices?: string[];
+              };
+              newQuestions.push({
+                id: generateId(),
+                text: parsed.text ?? "",
+                description: parsed.description ?? "",
+                required: parsed.required ?? false,
+                choices: (parsed.choices && parsed.choices.length > 0)
+                  ? parsed.choices.map((c) => ({ id: generateId(), text: c }))
+                  : [{ id: generateId(), text: "" }],
+                conditions: [],
+                hasShuffleIcon: false,
+                hasWarningIcon: false,
+              });
+            } catch {
+              // skip malformed JSON
+            }
+          }
+          content = content.replace(/\[ADD_QUESTION:\s*\{[\s\S]*?\}\s*\]/g, "").trim();
+
+          if (newQuestions.length > 0) {
+            onAddQuestions(newQuestions);
+          }
+
+          updated[updated.length - 1] = { ...last, content };
         }
         return updated;
       });
