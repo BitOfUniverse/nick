@@ -5,9 +5,10 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4o-mini";
 
-const SYSTEM_PROMPT = `You are an AI Editing Agent for a survey builder platform. The current survey is called "Share Behavior Research".
+function buildSystemPrompt(studyGoal: string) {
+  return `You are an AI Editing Agent for a survey builder platform. The current survey is called "Share Behavior Research".
 
-The study goal is: "The goal of this study is to understand why some creators delay or avoid sharing their Linktree."
+The study goal is: "${studyGoal}"
 
 Current survey questions:
 1. "What's been holding you back from sharing your Linktree so far?"
@@ -21,6 +22,7 @@ You help users review and improve their survey questions, answer options, and ov
 - Help with display conditions and skip logic
 
 Use markdown formatting: **bold**, bullet points (- ), and headers (##, ###) for clear, structured responses. Be concise and actionable.`;
+}
 
 // Initial conversation context so the model knows what was discussed
 const INITIAL_MESSAGES = [
@@ -63,12 +65,13 @@ const server = serve({
 
     "/api/chat": {
       async POST(req) {
-        const { messages } = (await req.json()) as {
+        const { messages, studyGoal } = (await req.json()) as {
           messages: { role: string; content: string }[];
+          studyGoal?: string;
         };
 
         const fullMessages = [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt(studyGoal || "The goal of this study is to understand why some creators delay or avoid sharing their Linktree.") },
           ...INITIAL_MESSAGES,
           ...messages,
         ];

@@ -116,6 +116,9 @@ export function App() {
     initialQuestions[1]!.id,
   );
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [studyGoal, setStudyGoal] = useState(
+    "The goal of this study is to understand why some creators delay or avoid sharing...",
+  );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
@@ -125,12 +128,15 @@ export function App() {
       <LeftPanel
         collapsed={leftPanelCollapsed}
         onCollapse={() => setLeftPanelCollapsed(true)}
+        studyGoal={studyGoal}
       />
       <RightPanel
         questions={questions}
         setQuestions={setQuestions}
         selectedQuestionId={selectedQuestionId}
         setSelectedQuestionId={setSelectedQuestionId}
+        studyGoal={studyGoal}
+        setStudyGoal={setStudyGoal}
       />
     </div>
   );
@@ -163,9 +169,11 @@ function CollapsedLeftPanel({ onExpand }: { onExpand: () => void }) {
 function LeftPanel({
   collapsed,
   onCollapse,
+  studyGoal,
 }: {
   collapsed: boolean;
   onCollapse: () => void;
+  studyGoal: string;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -205,6 +213,7 @@ function LeftPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+          studyGoal,
         }),
       });
 
@@ -599,11 +608,15 @@ function RightPanel({
   setQuestions,
   selectedQuestionId,
   setSelectedQuestionId,
+  studyGoal,
+  setStudyGoal,
 }: {
   questions: SurveyQuestion[];
   setQuestions: React.Dispatch<React.SetStateAction<SurveyQuestion[]>>;
   selectedQuestionId: string | null;
   setSelectedQuestionId: (id: string | null) => void;
+  studyGoal: string;
+  setStudyGoal: (goal: string) => void;
 }) {
   const handleSelectQuestion = (id: string) => {
     setSelectedQuestionId(id);
@@ -795,25 +808,7 @@ function RightPanel({
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto px-8 pb-8">
         {/* Study Goal Banner */}
-        <div
-          className="flex items-center gap-3 rounded-2xl mt-4 px-4"
-          style={{
-            background: goldBgLight,
-            border: `1px solid ${goldBorder}`,
-            minHeight: 48,
-          }}
-        >
-          <div
-            className="flex items-center justify-center rounded-lg shrink-0"
-            style={{ width: 28, height: 28, background: "#3B9B6E" }}
-          >
-            <span className="text-white text-xs font-bold">?</span>
-          </div>
-          <p className="text-sm py-3" style={{ color: textPrimary }}>
-            <strong>Study Goal:</strong>&nbsp; The goal of this study is to understand why some
-            creators delay or avoid sharing...
-          </p>
-        </div>
+        <StudyGoalBanner value={studyGoal} onChange={setStudyGoal} />
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 mt-4">
@@ -1102,6 +1097,92 @@ function ExpandedQuestion({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── Editable Study Goal Banner ─── */
+function StudyGoalBanner({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed) onChange(trimmed);
+    else setDraft(value);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setDraft(value);
+    setEditing(false);
+  };
+
+  return (
+    <div
+      className="flex items-center gap-3 rounded-2xl mt-4 px-4 cursor-pointer group"
+      style={{
+        background: goldBgLight,
+        border: `1px solid ${goldBorder}`,
+        minHeight: 48,
+      }}
+      onClick={() => {
+        if (!editing) {
+          setDraft(value);
+          setEditing(true);
+        }
+      }}
+    >
+      <div
+        className="flex items-center justify-center rounded-lg shrink-0"
+        style={{ width: 28, height: 28, background: "#3B9B6E" }}
+      >
+        <span className="text-white text-xs font-bold">?</span>
+      </div>
+      {editing ? (
+        <div className="flex-1 flex items-center gap-2 py-2">
+          <strong className="text-sm shrink-0" style={{ color: textPrimary }}>
+            Study Goal:
+          </strong>
+          <input
+            ref={inputRef}
+            type="text"
+            className="flex-1 text-sm bg-transparent outline-none"
+            style={{ color: textPrimary }}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") cancel();
+            }}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : (
+        <p className="text-sm py-3 flex-1" style={{ color: textPrimary }}>
+          <strong>Study Goal:</strong>&nbsp;{value}
+          <Pencil
+            size={14}
+            color={textSecondary}
+            className="inline-block ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
+          />
+        </p>
+      )}
     </div>
   );
 }
