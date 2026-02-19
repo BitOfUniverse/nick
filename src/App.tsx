@@ -44,11 +44,110 @@ interface ChatMessage {
   content: string;
 }
 
+interface Condition {
+  id: string;
+  sourceQuestionLabel: string;
+  operator: string;
+  value: string;
+}
+
+interface SurveyQuestion {
+  id: string;
+  text: string;
+  description: string;
+  required: boolean;
+  choices: { id: string; text: string }[];
+  conditions: Condition[];
+  hasShuffleIcon: boolean;
+  hasWarningIcon: boolean;
+}
+
+/* ─── Helpers ─── */
+let _idCounter = 0;
+function generateId() {
+  return `id-${Date.now()}-${++_idCounter}`;
+}
+
+/* ─── Initial Data ─── */
+const initialQuestions: SurveyQuestion[] = [
+  {
+    id: generateId(),
+    text: "What\u2019s been holding you back from sharing your Linktree so far?",
+    description: "",
+    required: false,
+    choices: [{ id: generateId(), text: "" }],
+    conditions: [],
+    hasShuffleIcon: true,
+    hasWarningIcon: true,
+  },
+  {
+    id: generateId(),
+    text: "Which of the following best describes your current sharing status?",
+    description: "",
+    required: true,
+    choices: [
+      { id: generateId(), text: "" },
+      { id: generateId(), text: "" },
+    ],
+    conditions: [
+      {
+        id: generateId(),
+        sourceQuestionLabel: "Do you play music?",
+        operator: "=",
+        value: "Yes",
+      },
+    ],
+    hasShuffleIcon: false,
+    hasWarningIcon: false,
+  },
+];
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   APP
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
 export function App() {
+  const [questions, setQuestions] = useState<SurveyQuestion[]>(initialQuestions);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
+    initialQuestions[1]!.id,
+  );
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      <LeftPanel />
-      <RightPanel />
+      {leftPanelCollapsed && (
+        <CollapsedLeftPanel onExpand={() => setLeftPanelCollapsed(false)} />
+      )}
+      <LeftPanel
+        collapsed={leftPanelCollapsed}
+        onCollapse={() => setLeftPanelCollapsed(true)}
+      />
+      <RightPanel
+        questions={questions}
+        setQuestions={setQuestions}
+        selectedQuestionId={selectedQuestionId}
+        setSelectedQuestionId={setSelectedQuestionId}
+      />
+    </div>
+  );
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COLLAPSED LEFT PANEL
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+function CollapsedLeftPanel({ onExpand }: { onExpand: () => void }) {
+  return (
+    <div
+      className="flex flex-col items-center pt-4 bg-white shrink-0"
+      style={{ width: 48, borderRight: `1px solid ${borderDefault}` }}
+    >
+      <button
+        className="flex items-center justify-center cursor-pointer bg-transparent border-none"
+        onClick={onExpand}
+      >
+        <Menu size={20} color={textPrimary} />
+      </button>
     </div>
   );
 }
@@ -57,11 +156,21 @@ export function App() {
    LEFT PANEL – AI Editing Agent (interactive chat)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-function LeftPanel() {
+function LeftPanel({
+  collapsed,
+  onCollapse,
+}: {
+  collapsed: boolean;
+  onCollapse: () => void;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const isStreamingRef = useRef(isStreaming);
+  isStreamingRef.current = isStreaming;
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -73,14 +182,14 @@ function LeftPanel() {
 
   useEffect(scrollToBottom, [messages]);
 
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || isStreaming) return;
+  const sendMessage = async (textOverride?: string) => {
+    const text = (textOverride ?? input).trim();
+    if (!text || isStreamingRef.current) return;
 
     const userMsg: ChatMessage = { role: "user", content: text };
-    const allMessages = [...messages, userMsg];
+    const allMessages = [...messagesRef.current, userMsg];
     setMessages(allMessages);
-    setInput("");
+    if (!textOverride) setInput("");
     setIsStreaming(true);
 
     // Add placeholder assistant message
@@ -163,7 +272,12 @@ function LeftPanel() {
   return (
     <aside
       className="flex flex-col h-screen bg-white"
-      style={{ width: 400, minWidth: 400, borderRight: `1px solid ${borderDefault}` }}
+      style={{
+        width: 400,
+        minWidth: 400,
+        borderRight: `1px solid ${borderDefault}`,
+        display: collapsed ? "none" : undefined,
+      }}
     >
       {/* Header */}
       <div
@@ -176,13 +290,18 @@ function LeftPanel() {
             AI Editing Agent
           </span>
         </div>
-        <PanelLeftClose size={20} color={textSecondary} className="cursor-pointer" />
+        <PanelLeftClose
+          size={20}
+          color={textSecondary}
+          className="cursor-pointer"
+          onClick={onCollapse}
+        />
       </div>
 
       {/* Scrollable Chat Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {/* ── Initial static conversation ── */}
-        <InitialConversation />
+        <InitialConversation onSendMessage={sendMessage} />
 
         {/* ── Dynamic messages ── */}
         {messages.map((msg, i) =>
@@ -223,7 +342,7 @@ function LeftPanel() {
                 height: 32,
                 background: isStreaming ? borderDefault : gold,
               }}
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={isStreaming}
             >
               {isStreaming ? (
@@ -240,7 +359,7 @@ function LeftPanel() {
 }
 
 /* ─── Initial static conversation (matches the original screenshot) ─── */
-function InitialConversation() {
+function InitialConversation({ onSendMessage }: { onSendMessage: (text: string) => void }) {
   return (
     <>
       {/* Bot greeting */}
@@ -251,9 +370,9 @@ function InitialConversation() {
           What would you like to do next?
         </p>
         <div className="flex gap-2 flex-wrap">
-          <ActionChip icon={<Eye size={16} />} label="Show preview" />
-          <ActionChip icon={<RotateCcw size={16} />} label="Add replays" />
-          <ActionChip icon={<Link2 size={16} />} label="Get study URL" />
+          <ActionChip icon={<Eye size={16} />} label="Show preview" onClick={() => onSendMessage("Show preview")} />
+          <ActionChip icon={<RotateCcw size={16} />} label="Add replays" onClick={() => onSendMessage("Add replays")} />
+          <ActionChip icon={<Link2 size={16} />} label="Get study URL" onClick={() => onSendMessage("Get study URL")} />
         </div>
       </div>
 
@@ -299,7 +418,10 @@ function InitialConversation() {
         </ul>
 
         <div className="flex gap-2 pt-1">
-          <button className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-medium text-emerald-700 cursor-pointer">
+          <button
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-medium text-emerald-700 cursor-pointer"
+            onClick={() => onSendMessage("Approve the recommended changes")}
+          >
             <Check size={16} className="text-emerald-600" />
             Approve
             <ChevronDown size={14} className="text-emerald-600" />
@@ -307,6 +429,7 @@ function InitialConversation() {
           <button
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium cursor-pointer"
             style={{ border: `1px solid ${borderDefault}`, color: textPrimary }}
+            onClick={() => onSendMessage("Regenerate the recommendations")}
           >
             <Pencil size={16} />
             Regenerate
@@ -464,10 +587,152 @@ function renderMarkdown(text: string): React.ReactNode[] {
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   RIGHT PANEL – Survey Builder (static, unchanged)
+   RIGHT PANEL – Survey Builder (data-driven)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-function RightPanel() {
+function RightPanel({
+  questions,
+  setQuestions,
+  selectedQuestionId,
+  setSelectedQuestionId,
+}: {
+  questions: SurveyQuestion[];
+  setQuestions: React.Dispatch<React.SetStateAction<SurveyQuestion[]>>;
+  selectedQuestionId: string | null;
+  setSelectedQuestionId: (id: string | null) => void;
+}) {
+  const handleSelectQuestion = (id: string) => {
+    setSelectedQuestionId(id);
+  };
+
+  const handleAddQuestion = () => {
+    const newQ: SurveyQuestion = {
+      id: generateId(),
+      text: "",
+      description: "",
+      required: false,
+      choices: [{ id: generateId(), text: "" }],
+      conditions: [],
+      hasShuffleIcon: false,
+      hasWarningIcon: false,
+    };
+    setQuestions((prev) => [...prev, newQ]);
+    setSelectedQuestionId(newQ.id);
+  };
+
+  const handleToggleRequired = (id: string) => {
+    setQuestions((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, required: !q.required } : q)),
+    );
+  };
+
+  const handleUpdateText = (id: string, text: string) => {
+    setQuestions((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, text } : q)),
+    );
+  };
+
+  const handleUpdateDescription = (id: string, description: string) => {
+    setQuestions((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, description } : q)),
+    );
+  };
+
+  const handleUpdateChoice = (qId: string, choiceId: string, text: string) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === qId
+          ? {
+              ...q,
+              choices: q.choices.map((c) =>
+                c.id === choiceId ? { ...c, text } : c,
+              ),
+            }
+          : q,
+      ),
+    );
+  };
+
+  const handleAddChoice = (qId: string) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === qId
+          ? { ...q, choices: [...q.choices, { id: generateId(), text: "" }] }
+          : q,
+      ),
+    );
+  };
+
+  const handleDeleteChoice = (qId: string, choiceId: string) => {
+    setQuestions((prev) =>
+      prev.map((q) => {
+        if (q.id !== qId || q.choices.length <= 1) return q;
+        return { ...q, choices: q.choices.filter((c) => c.id !== choiceId) };
+      }),
+    );
+  };
+
+  const handleAddCondition = (qId: string) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === qId
+          ? {
+              ...q,
+              conditions: [
+                ...q.conditions,
+                {
+                  id: generateId(),
+                  sourceQuestionLabel: "Select question",
+                  operator: "=",
+                  value: "Select value",
+                },
+              ],
+            }
+          : q,
+      ),
+    );
+  };
+
+  const handleDeleteCondition = (qId: string, condId: string) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === qId
+          ? { ...q, conditions: q.conditions.filter((c) => c.id !== condId) }
+          : q,
+      ),
+    );
+  };
+
+  const handleDuplicateQuestion = () => {
+    if (!selectedQuestionId) return;
+    const idx = questions.findIndex((q) => q.id === selectedQuestionId);
+    if (idx === -1) return;
+    const original = questions[idx]!;
+    const clone: SurveyQuestion = {
+      ...original,
+      id: generateId(),
+      choices: original.choices.map((c) => ({ ...c, id: generateId() })),
+      conditions: original.conditions.map((c) => ({ ...c, id: generateId() })),
+    };
+    setQuestions((prev) => {
+      const next = [...prev];
+      next.splice(idx + 1, 0, clone);
+      return next;
+    });
+    setSelectedQuestionId(clone.id);
+  };
+
+  const handleShuffleQuestions = () => {
+    setQuestions((prev) => {
+      const arr = [...prev];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+      }
+      return arr;
+    });
+  };
+
   return (
     <main className="flex-1 flex flex-col h-screen overflow-hidden" style={{ background: bgSecondary }}>
       {/* Header */}
@@ -528,7 +793,7 @@ function RightPanel() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 mt-4">
-          <IconBtn>
+          <IconBtn onClick={handleDuplicateQuestion}>
             <Copy size={16} color={textSecondary} />
           </IconBtn>
           <button
@@ -540,6 +805,7 @@ function RightPanel() {
               border: `1px solid ${goldBorder}`,
               color: textPrimary,
             }}
+            onClick={handleAddQuestion}
           >
             Add Question
             <Plus size={16} />
@@ -547,7 +813,7 @@ function RightPanel() {
           <IconBtn>
             <Globe size={16} color={textSecondary} />
           </IconBtn>
-          <IconBtn>
+          <IconBtn onClick={handleShuffleQuestions}>
             <Shuffle size={16} color={textSecondary} />
           </IconBtn>
           <div className="flex-1" />
@@ -558,121 +824,224 @@ function RightPanel() {
 
         {/* Questions */}
         <div className="mt-4 space-y-2">
-          {/* Question 1 – collapsed */}
-          <div
-            className="flex items-center bg-white rounded-2xl px-4"
-            style={{ height: 48, border: `1px solid ${borderDefault}` }}
-          >
-            <span className="text-sm mr-3" style={{ color: textSecondary }}>1</span>
-            <ClipboardList size={16} color={textSecondary} className="mr-2" />
-            <span className="text-sm flex-1" style={{ color: textPrimary }}>
-              What&rsquo;s been holding you back from sharing your Linktree so far?
-            </span>
-            <Shuffle size={16} color={gold} className="mr-3" />
-            <AlertTriangle size={16} color={gold} />
-          </div>
-
-          {/* Question 2 – expanded / selected */}
-          <div className="bg-white rounded-2xl" style={{ border: `2px solid ${textPrimary}` }}>
-            {/* Q2 Header */}
-            <div className="flex items-center px-4" style={{ height: 48 }}>
-              <span className="text-sm mr-3" style={{ color: textSecondary }}>2</span>
-              <ClipboardList size={16} color={textSecondary} className="mr-2" />
-              <span className="text-sm flex-1" style={{ color: textPrimary }}>
-                Which of the following best describes your current sharing status?
-              </span>
-              <span className="text-sm mr-2" style={{ color: textSecondary }}>Required</span>
-              <div
-                className="relative rounded-full cursor-pointer mr-3"
-                style={{ width: 40, height: 22, background: gold }}
-              >
-                <div
-                  className="absolute bg-white rounded-full shadow"
-                  style={{ width: 18, height: 18, top: 2, right: 2 }}
-                />
-              </div>
-              <MoreHorizontal size={16} color={textSecondary} className="cursor-pointer" />
-            </div>
-
-            {/* Condition Area */}
-            <div className="px-4 py-3" style={{ borderTop: `1px solid ${borderDefault}` }}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm" style={{ color: textSecondary }}>Display when</span>
-                <DropdownPill>
-                  <span className="text-sm" style={{ color: textSecondary }}>1</span>
-                  <ClipboardList size={14} color={textSecondary} />
-                  <span className="text-sm" style={{ color: textPrimary }}>Do you play music?</span>
-                  <ChevronDown size={14} color={textSecondary} />
-                </DropdownPill>
-                <DropdownPill>
-                  <span className="text-sm" style={{ color: textPrimary }}>=</span>
-                  <ChevronDown size={14} color={textSecondary} />
-                </DropdownPill>
-                <DropdownPill>
-                  <span className="text-sm" style={{ color: textPrimary }}>Yes</span>
-                  <ChevronDown size={14} color={textSecondary} />
-                </DropdownPill>
-                <Trash2 size={16} color={textSecondary} className="cursor-pointer" />
-              </div>
-
-              <button
-                className="flex items-center gap-2 mt-3 text-sm font-medium cursor-pointer bg-transparent border-none"
-                style={{ color: textPrimary }}
-              >
-                <Plus size={14} />
-                Add condition
-              </button>
-
-              <button
-                className="flex items-center gap-2 mt-3 text-sm cursor-pointer bg-transparent border-none"
-                style={{ color: textSecondary }}
-              >
-                <Eye size={14} />
-                Add Display logic
-                <HelpCircle size={14} />
-              </button>
-            </div>
-
-            {/* Question Editor */}
-            <div className="px-4 py-4 space-y-4" style={{ borderTop: `1px solid ${borderDefault}` }}>
-              <div>
-                <label className="text-sm font-medium" style={{ color: textPrimary }}>Question*</label>
-                <div className="mt-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${borderDefault}` }}>
-                  <FormatToolbar showBold={false} />
-                  <input
-                    type="text"
-                    placeholder="How satisfied are you with..."
-                    className="w-full px-3 py-2 text-sm outline-none bg-transparent"
-                    style={{ color: textPrimary, height: 40 }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium" style={{ color: textPrimary }}>Description</label>
-                <div className="mt-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${borderDefault}` }}>
-                  <FormatToolbar showBold={true} />
-                  <input
-                    type="text"
-                    placeholder="This will help us improve your experience."
-                    className="w-full px-3 py-2 text-sm outline-none bg-transparent"
-                    style={{ color: textPrimary, height: 40 }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium" style={{ color: textPrimary }}>Choices*</label>
-                <div className="mt-2 space-y-2">
-                  <ChoiceRow placeholder="Option 1" />
-                  <ChoiceRow placeholder="Option 2" />
-                </div>
-              </div>
-            </div>
-          </div>
+          {questions.map((q, index) =>
+            q.id === selectedQuestionId ? (
+              <ExpandedQuestion
+                key={q.id}
+                question={q}
+                index={index}
+                onToggleRequired={() => handleToggleRequired(q.id)}
+                onUpdateText={(text) => handleUpdateText(q.id, text)}
+                onUpdateDescription={(desc) => handleUpdateDescription(q.id, desc)}
+                onUpdateChoice={(choiceId, text) => handleUpdateChoice(q.id, choiceId, text)}
+                onAddChoice={() => handleAddChoice(q.id)}
+                onDeleteChoice={(choiceId) => handleDeleteChoice(q.id, choiceId)}
+                onAddCondition={() => handleAddCondition(q.id)}
+                onDeleteCondition={(condId) => handleDeleteCondition(q.id, condId)}
+              />
+            ) : (
+              <CollapsedQuestion
+                key={q.id}
+                question={q}
+                index={index}
+                onClick={() => handleSelectQuestion(q.id)}
+              />
+            ),
+          )}
         </div>
       </div>
     </main>
+  );
+}
+
+/* ─── Collapsed Question ─── */
+function CollapsedQuestion({
+  question,
+  index,
+  onClick,
+}: {
+  question: SurveyQuestion;
+  index: number;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center bg-white rounded-2xl px-4 cursor-pointer"
+      style={{ height: 48, border: `1px solid ${borderDefault}` }}
+      onClick={onClick}
+    >
+      <span className="text-sm mr-3" style={{ color: textSecondary }}>{index + 1}</span>
+      <ClipboardList size={16} color={textSecondary} className="mr-2" />
+      <span className="text-sm flex-1" style={{ color: textPrimary }}>
+        {question.text || "Untitled question"}
+      </span>
+      {question.hasShuffleIcon && <Shuffle size={16} color={gold} className="mr-3" />}
+      {question.hasWarningIcon && <AlertTriangle size={16} color={gold} />}
+    </div>
+  );
+}
+
+/* ─── Expanded Question ─── */
+function ExpandedQuestion({
+  question,
+  index,
+  onToggleRequired,
+  onUpdateText,
+  onUpdateDescription,
+  onUpdateChoice,
+  onAddChoice,
+  onDeleteChoice,
+  onAddCondition,
+  onDeleteCondition,
+}: {
+  question: SurveyQuestion;
+  index: number;
+  onToggleRequired: () => void;
+  onUpdateText: (text: string) => void;
+  onUpdateDescription: (desc: string) => void;
+  onUpdateChoice: (choiceId: string, text: string) => void;
+  onAddChoice: () => void;
+  onDeleteChoice: (choiceId: string) => void;
+  onAddCondition: () => void;
+  onDeleteCondition: (condId: string) => void;
+}) {
+  return (
+    <div className="bg-white rounded-2xl" style={{ border: `2px solid ${textPrimary}` }}>
+      {/* Header */}
+      <div className="flex items-center px-4" style={{ height: 48 }}>
+        <span className="text-sm mr-3" style={{ color: textSecondary }}>{index + 1}</span>
+        <ClipboardList size={16} color={textSecondary} className="mr-2" />
+        <span className="text-sm flex-1" style={{ color: textPrimary }}>
+          {question.text || "Untitled question"}
+        </span>
+        <span className="text-sm mr-2" style={{ color: textSecondary }}>Required</span>
+        <div
+          className="relative rounded-full cursor-pointer mr-3"
+          style={{
+            width: 40,
+            height: 22,
+            background: question.required ? gold : "#D1D5DB",
+          }}
+          onClick={onToggleRequired}
+        >
+          <div
+            className="absolute bg-white rounded-full shadow"
+            style={{
+              width: 18,
+              height: 18,
+              top: 2,
+              ...(question.required ? { right: 2 } : { left: 2 }),
+            }}
+          />
+        </div>
+        <MoreHorizontal size={16} color={textSecondary} className="cursor-pointer" />
+      </div>
+
+      {/* Condition Area */}
+      <div className="px-4 py-3" style={{ borderTop: `1px solid ${borderDefault}` }}>
+        {question.conditions.map((cond) => (
+          <div key={cond.id} className="flex items-center gap-3 flex-wrap mb-2">
+            <span className="text-sm" style={{ color: textSecondary }}>Display when</span>
+            <DropdownPill>
+              <span className="text-sm" style={{ color: textPrimary }}>{cond.sourceQuestionLabel}</span>
+              <ChevronDown size={14} color={textSecondary} />
+            </DropdownPill>
+            <DropdownPill>
+              <span className="text-sm" style={{ color: textPrimary }}>{cond.operator}</span>
+              <ChevronDown size={14} color={textSecondary} />
+            </DropdownPill>
+            <DropdownPill>
+              <span className="text-sm" style={{ color: textPrimary }}>{cond.value}</span>
+              <ChevronDown size={14} color={textSecondary} />
+            </DropdownPill>
+            <Trash2
+              size={16}
+              color={textSecondary}
+              className="cursor-pointer"
+              onClick={() => onDeleteCondition(cond.id)}
+            />
+          </div>
+        ))}
+
+        <button
+          className="flex items-center gap-2 mt-1 text-sm font-medium cursor-pointer bg-transparent border-none"
+          style={{ color: textPrimary }}
+          onClick={onAddCondition}
+        >
+          <Plus size={14} />
+          Add condition
+        </button>
+
+        <button
+          className="flex items-center gap-2 mt-3 text-sm cursor-pointer bg-transparent border-none"
+          style={{ color: textSecondary }}
+        >
+          <Eye size={14} />
+          Add Display logic
+          <HelpCircle size={14} />
+        </button>
+      </div>
+
+      {/* Question Editor */}
+      <div className="px-4 py-4 space-y-4" style={{ borderTop: `1px solid ${borderDefault}` }}>
+        <div>
+          <label className="text-sm font-medium" style={{ color: textPrimary }}>Question*</label>
+          <div className="mt-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${borderDefault}` }}>
+            <FormatToolbar showBold={false} />
+            <input
+              type="text"
+              placeholder="How satisfied are you with..."
+              className="w-full px-3 py-2 text-sm outline-none bg-transparent"
+              style={{ color: textPrimary, height: 40 }}
+              value={question.text}
+              onChange={(e) => onUpdateText(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium" style={{ color: textPrimary }}>Description</label>
+          <div className="mt-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${borderDefault}` }}>
+            <FormatToolbar showBold={true} />
+            <input
+              type="text"
+              placeholder="This will help us improve your experience."
+              className="w-full px-3 py-2 text-sm outline-none bg-transparent"
+              style={{ color: textPrimary, height: 40 }}
+              value={question.description}
+              onChange={(e) => onUpdateDescription(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium" style={{ color: textPrimary }}>Choices*</label>
+          <div className="mt-2 space-y-2">
+            {question.choices.map((choice, i) => (
+              <ChoiceRow
+                key={choice.id}
+                value={choice.text}
+                placeholder={`Option ${i + 1}`}
+                onChange={(text) => onUpdateChoice(choice.id, text)}
+                onDelete={
+                  question.choices.length > 1
+                    ? () => onDeleteChoice(choice.id)
+                    : undefined
+                }
+              />
+            ))}
+            <button
+              className="flex items-center gap-2 text-sm font-medium cursor-pointer bg-transparent border-none pt-1"
+              style={{ color: textPrimary }}
+              onClick={onAddChoice}
+            >
+              <Plus size={14} />
+              Add option
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -680,11 +1049,12 @@ function RightPanel() {
    Shared small components
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-function ActionChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+function ActionChip({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
   return (
     <button
       className="inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm cursor-pointer bg-white"
       style={{ border: `1px solid ${borderDefault}`, color: textPrimary }}
+      onClick={onClick}
     >
       {icon}
       {label}
@@ -692,11 +1062,12 @@ function ActionChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-function IconBtn({ children }: { children: React.ReactNode }) {
+function IconBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
     <button
       className="flex items-center justify-center rounded-lg cursor-pointer bg-white"
       style={{ width: 40, height: 40, border: `1px solid ${borderDefault}` }}
+      onClick={onClick}
     >
       {children}
     </button>
@@ -754,16 +1125,33 @@ function FormatToolbar({ showBold }: { showBold: boolean }) {
   );
 }
 
-function ChoiceRow({ placeholder }: { placeholder: string }) {
+function ChoiceRow({
+  value,
+  placeholder,
+  onChange,
+  onDelete,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (text: string) => void;
+  onDelete?: () => void;
+}) {
   return (
     <div className="flex items-center gap-2">
       <input
         type="text"
+        value={value}
         placeholder={placeholder}
         className="flex-1 px-3 text-sm outline-none bg-transparent rounded-lg"
         style={{ height: 40, border: `1px solid ${borderDefault}`, color: textPrimary }}
+        onChange={(e) => onChange(e.target.value)}
       />
-      <Trash2 size={16} color={textSecondary} className="cursor-pointer shrink-0" />
+      <Trash2
+        size={16}
+        color={onDelete ? textSecondary : borderDefault}
+        className={onDelete ? "cursor-pointer shrink-0" : "shrink-0"}
+        onClick={onDelete}
+      />
     </div>
   );
 }
