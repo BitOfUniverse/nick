@@ -1,10 +1,11 @@
-import { serve } from "bun";
+import { serve, redis } from "bun";
 import index from "./index.html";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4o-mini";
+const REDIS_KEY = "custom_system_prompt";
 
 function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[], customInstructions?: string) {
   const questionsList = questions.length > 0
@@ -145,6 +146,18 @@ const server = serve({
           console.error("File parse error:", err);
           return new Response(JSON.stringify({ error: "Failed to parse file" }), { status: 500 });
         }
+      },
+    },
+
+    "/api/system-prompt": {
+      async GET() {
+        const prompt = await redis.get(REDIS_KEY);
+        return Response.json({ customSystemPrompt: prompt ?? "" });
+      },
+      async PUT(req) {
+        const { customSystemPrompt } = (await req.json()) as { customSystemPrompt: string };
+        await redis.set(REDIS_KEY, customSystemPrompt);
+        return Response.json({ ok: true });
       },
     },
 

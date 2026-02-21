@@ -126,6 +126,15 @@ export function App() {
   );
   const [customSystemPrompt, setCustomSystemPrompt] = useState("");
 
+  useEffect(() => {
+    fetch("/api/system-prompt")
+      .then((res) => res.json())
+      .then((data: { customSystemPrompt: string }) => {
+        if (data.customSystemPrompt) setCustomSystemPrompt(data.customSystemPrompt);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {leftPanelCollapsed && (
@@ -655,6 +664,11 @@ function LeftPanel({
                 style={{ background: gold, border: `1px solid ${goldBorder}`, color: textPrimary }}
                 onClick={() => {
                   onCustomSystemPromptChange(promptDraft);
+                  fetch("/api/system-prompt", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ customSystemPrompt: promptDraft }),
+                  }).catch(() => {});
                   setShowSettings(false);
                 }}
               >
