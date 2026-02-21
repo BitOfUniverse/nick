@@ -6,9 +6,11 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4o-mini";
 const REDIS_KEY = "custom_system_prompt";
+const REDIS_IDENTITY_KEY = "system_prompt_identity";
+const DEFAULT_IDENTITY = 'You are an AI Editing Agent for a survey builder platform. The current survey is called "Share Behavior Research".';
 const redis = new RedisClient(process.env.REDIS_URL || "redis://localhost:6379");
 
-function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[], customInstructions?: string) {
+function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[], customInstructions?: string, identity?: string) {
   const questionsList = questions.length > 0
     ? questions.map((q, i) => {
         let line = `${i + 1}. "${q.text || "(untitled)"}"`;
@@ -18,7 +20,7 @@ function buildSystemPrompt(studyGoal: string, questions: { text: string; descrip
       }).join("\n")
     : "(no questions yet)";
 
-  return `You are an AI Editing Agent for a survey builder platform. The current survey is called "Share Behavior Research".
+  return `${identity || DEFAULT_IDENTITY}
 
 The study goal is: "${studyGoal}"
 
@@ -162,17 +164,30 @@ const server = serve({
       },
     },
 
+    "/api/system-prompt-identity": {
+      async GET() {
+        const identity = await redis.get(REDIS_IDENTITY_KEY);
+        return Response.json({ identity: identity ?? "", defaultIdentity: DEFAULT_IDENTITY });
+      },
+      async PUT(req) {
+        const { identity } = (await req.json()) as { identity: string };
+        await redis.set(REDIS_IDENTITY_KEY, identity);
+        return Response.json({ ok: true });
+      },
+    },
+
     "/api/chat": {
       async POST(req) {
-        const { messages, studyGoal, questions, customSystemPrompt } = (await req.json()) as {
+        const { messages, studyGoal, questions, customSystemPrompt, identity } = (await req.json()) as {
           messages: { role: string; content: string }[];
           studyGoal?: string;
           questions?: { text: string; description: string; choices: string[] }[];
           customSystemPrompt?: string;
+          identity?: string;
         };
 
         const fullMessages = [
-          { role: "system", content: buildSystemPrompt(studyGoal || "The goal of this study is to understand why some creators delay or avoid sharing their Linktree.", questions || [], customSystemPrompt || undefined) },
+          { role: "system", content: buildSystemPrompt(studyGoal || "The goal of this study is to understand why some creators delay or avoid sharing their Linktree.", questions || [], customSystemPrompt || undefined, identity || undefined) },
           ...INITIAL_MESSAGES,
           ...messages,
         ];

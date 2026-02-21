@@ -125,12 +125,21 @@ export function App() {
     "The goal of this study is to understand why some creators delay or avoid sharing...",
   );
   const [customSystemPrompt, setCustomSystemPrompt] = useState("");
+  const [identity, setIdentity] = useState("");
+  const [defaultIdentity, setDefaultIdentity] = useState("");
 
   useEffect(() => {
     fetch("/api/system-prompt")
       .then((res) => res.json())
       .then((data: { customSystemPrompt: string }) => {
         if (data.customSystemPrompt) setCustomSystemPrompt(data.customSystemPrompt);
+      })
+      .catch(() => {});
+    fetch("/api/system-prompt-identity")
+      .then((res) => res.json())
+      .then((data: { identity: string; defaultIdentity: string }) => {
+        setDefaultIdentity(data.defaultIdentity);
+        if (data.identity) setIdentity(data.identity);
       })
       .catch(() => {});
   }, []);
@@ -149,6 +158,9 @@ export function App() {
         onStudyGoalChange={setStudyGoal}
         customSystemPrompt={customSystemPrompt}
         onCustomSystemPromptChange={setCustomSystemPrompt}
+        identity={identity}
+        defaultIdentity={defaultIdentity}
+        onIdentityChange={setIdentity}
         questions={questions}
         onAddQuestions={(newQs) => {
           setQuestions((prev) => [...prev, ...newQs]);
@@ -230,6 +242,9 @@ function LeftPanel({
   onStudyGoalChange,
   customSystemPrompt,
   onCustomSystemPromptChange,
+  identity,
+  defaultIdentity,
+  onIdentityChange,
   questions,
   onAddQuestions,
   onDeleteQuestions,
@@ -243,6 +258,9 @@ function LeftPanel({
   onStudyGoalChange: (goal: string) => void;
   customSystemPrompt: string;
   onCustomSystemPromptChange: (prompt: string) => void;
+  identity: string;
+  defaultIdentity: string;
+  onIdentityChange: (identity: string) => void;
   questions: SurveyQuestion[];
   onAddQuestions: (questions: SurveyQuestion[]) => void;
   onDeleteQuestions: (indices: number[]) => void;
@@ -254,6 +272,7 @@ function LeftPanel({
   const [attachments, setAttachments] = useState<{ name: string; text: string; error?: string }[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [promptDraft, setPromptDraft] = useState(customSystemPrompt);
+  const [identityDraft, setIdentityDraft] = useState(identity);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -370,6 +389,7 @@ function LeftPanel({
             choices: q.choices.map((c) => c.text),
           })),
           customSystemPrompt: customSystemPrompt || undefined,
+          identity: identity || undefined,
         }),
       });
 
@@ -594,6 +614,7 @@ function LeftPanel({
             className="cursor-pointer"
             onClick={() => {
               setPromptDraft(customSystemPrompt);
+              setIdentityDraft(identity || defaultIdentity);
               setShowSettings(true);
             }}
           />
@@ -632,21 +653,54 @@ function LeftPanel({
                 onClick={() => setShowSettings(false)}
               />
             </div>
-            <div className="px-5 py-4 flex-1 overflow-y-auto space-y-3">
-              <p className="text-sm" style={{ color: textSecondary }}>
-                Add custom instructions to guide the AI assistant's behavior. These will be appended to the default system prompt.
-              </p>
-              <textarea
-                className="w-full rounded-lg px-3 py-3 text-sm outline-none resize-none"
-                style={{
-                  border: `1px solid ${borderDefault}`,
-                  color: textPrimary,
-                  minHeight: 160,
-                }}
-                placeholder="e.g. Always respond in a formal tone. Focus on question clarity and avoid jargon..."
-                value={promptDraft}
-                onChange={(e) => setPromptDraft(e.target.value)}
-              />
+            <div className="px-5 py-4 flex-1 overflow-y-auto space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: textPrimary }}>
+                  Agent Identity
+                </label>
+                <p className="text-xs" style={{ color: textSecondary }}>
+                  Define who the AI assistant is and what it works on.
+                </p>
+                <textarea
+                  className="w-full rounded-lg px-3 py-3 text-sm outline-none resize-none"
+                  style={{
+                    border: `1px solid ${borderDefault}`,
+                    color: textPrimary,
+                    minHeight: 80,
+                  }}
+                  placeholder={defaultIdentity}
+                  value={identityDraft}
+                  onChange={(e) => setIdentityDraft(e.target.value)}
+                />
+                {identityDraft && identityDraft !== defaultIdentity && (
+                  <button
+                    className="text-xs cursor-pointer bg-transparent border-none underline"
+                    style={{ color: textSecondary }}
+                    onClick={() => setIdentityDraft(defaultIdentity)}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: textPrimary }}>
+                  Custom Instructions
+                </label>
+                <p className="text-xs" style={{ color: textSecondary }}>
+                  Additional instructions appended to the system prompt.
+                </p>
+                <textarea
+                  className="w-full rounded-lg px-3 py-3 text-sm outline-none resize-none"
+                  style={{
+                    border: `1px solid ${borderDefault}`,
+                    color: textPrimary,
+                    minHeight: 120,
+                  }}
+                  placeholder="e.g. Always respond in a formal tone. Focus on question clarity and avoid jargon..."
+                  value={promptDraft}
+                  onChange={(e) => setPromptDraft(e.target.value)}
+                />
+              </div>
             </div>
             <div
               className="flex items-center justify-end gap-3 px-5 shrink-0"
@@ -664,10 +718,16 @@ function LeftPanel({
                 style={{ background: gold, border: `1px solid ${goldBorder}`, color: textPrimary }}
                 onClick={() => {
                   onCustomSystemPromptChange(promptDraft);
+                  onIdentityChange(identityDraft);
                   fetch("/api/system-prompt", {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ customSystemPrompt: promptDraft }),
+                  }).catch(() => {});
+                  fetch("/api/system-prompt-identity", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ identity: identityDraft }),
                   }).catch(() => {});
                   setShowSettings(false);
                 }}
