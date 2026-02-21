@@ -1,4 +1,4 @@
-import { serve, redis } from "bun";
+import { serve, RedisClient } from "bun";
 import index from "./index.html";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
@@ -6,6 +6,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4o-mini";
 const REDIS_KEY = "custom_system_prompt";
+const redis = new RedisClient(process.env.REDIS_URL || "redis://localhost:6379");
 
 function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[], customInstructions?: string) {
   const questionsList = questions.length > 0
