@@ -29,6 +29,7 @@ import {
   Loader2,
   X,
   FileText,
+  Settings,
 } from "lucide-react";
 
 /* ─── Design Tokens ─── */
@@ -123,6 +124,16 @@ export function App() {
   const [studyGoal, setStudyGoal] = useState(
     "The goal of this study is to understand why some creators delay or avoid sharing...",
   );
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
+
+  useEffect(() => {
+    fetch("/api/system-prompt")
+      .then((res) => res.json())
+      .then((data: { customSystemPrompt: string }) => {
+        if (data.customSystemPrompt) setCustomSystemPrompt(data.customSystemPrompt);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
@@ -136,6 +147,8 @@ export function App() {
         onWidthChange={setLeftPanelWidth}
         studyGoal={studyGoal}
         onStudyGoalChange={setStudyGoal}
+        customSystemPrompt={customSystemPrompt}
+        onCustomSystemPromptChange={setCustomSystemPrompt}
         questions={questions}
         onAddQuestions={(newQs) => {
           setQuestions((prev) => [...prev, ...newQs]);
@@ -215,6 +228,8 @@ function LeftPanel({
   onWidthChange,
   studyGoal,
   onStudyGoalChange,
+  customSystemPrompt,
+  onCustomSystemPromptChange,
   questions,
   onAddQuestions,
   onDeleteQuestions,
@@ -226,6 +241,8 @@ function LeftPanel({
   onWidthChange: (w: number) => void;
   studyGoal: string;
   onStudyGoalChange: (goal: string) => void;
+  customSystemPrompt: string;
+  onCustomSystemPromptChange: (prompt: string) => void;
   questions: SurveyQuestion[];
   onAddQuestions: (questions: SurveyQuestion[]) => void;
   onDeleteQuestions: (indices: number[]) => void;
@@ -235,6 +252,8 @@ function LeftPanel({
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; text: string; error?: string }[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [promptDraft, setPromptDraft] = useState(customSystemPrompt);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -350,6 +369,7 @@ function LeftPanel({
             description: q.description,
             choices: q.choices.map((c) => c.text),
           })),
+          customSystemPrompt: customSystemPrompt || undefined,
         }),
       });
 
@@ -567,13 +587,97 @@ function LeftPanel({
             AI Editing Agent
           </span>
         </div>
-        <PanelLeftClose
-          size={20}
-          color={textSecondary}
-          className="cursor-pointer"
-          onClick={onCollapse}
-        />
+        <div className="flex items-center gap-2">
+          <Settings
+            size={20}
+            color={textSecondary}
+            className="cursor-pointer"
+            onClick={() => {
+              setPromptDraft(customSystemPrompt);
+              setShowSettings(true);
+            }}
+          />
+          <PanelLeftClose
+            size={20}
+            color={textSecondary}
+            className="cursor-pointer"
+            onClick={onCollapse}
+          />
+        </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-[90%] max-w-[480px] flex flex-col"
+            style={{ maxHeight: "80%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-5 shrink-0"
+              style={{ height: 56, borderBottom: `1px solid ${borderDefault}` }}
+            >
+              <span className="text-[15px] font-semibold" style={{ color: textPrimary }}>
+                Custom Instructions
+              </span>
+              <X
+                size={18}
+                color={textSecondary}
+                className="cursor-pointer"
+                onClick={() => setShowSettings(false)}
+              />
+            </div>
+            <div className="px-5 py-4 flex-1 overflow-y-auto space-y-3">
+              <p className="text-sm" style={{ color: textSecondary }}>
+                Add custom instructions to guide the AI assistant's behavior. These will be appended to the default system prompt.
+              </p>
+              <textarea
+                className="w-full rounded-lg px-3 py-3 text-sm outline-none resize-none"
+                style={{
+                  border: `1px solid ${borderDefault}`,
+                  color: textPrimary,
+                  minHeight: 160,
+                }}
+                placeholder="e.g. Always respond in a formal tone. Focus on question clarity and avoid jargon..."
+                value={promptDraft}
+                onChange={(e) => setPromptDraft(e.target.value)}
+              />
+            </div>
+            <div
+              className="flex items-center justify-end gap-3 px-5 shrink-0"
+              style={{ height: 64, borderTop: `1px solid ${borderDefault}` }}
+            >
+              <button
+                className="h-9 px-4 rounded-lg text-sm font-medium cursor-pointer bg-white"
+                style={{ border: `1px solid ${borderDefault}`, color: textPrimary }}
+                onClick={() => setShowSettings(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="h-9 px-4 rounded-lg text-sm font-medium cursor-pointer"
+                style={{ background: gold, border: `1px solid ${goldBorder}`, color: textPrimary }}
+                onClick={() => {
+                  onCustomSystemPromptChange(promptDraft);
+                  fetch("/api/system-prompt", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ customSystemPrompt: promptDraft }),
+                  }).catch(() => {});
+                  setShowSettings(false);
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Scrollable Chat Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
