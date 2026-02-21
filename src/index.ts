@@ -6,7 +6,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4o-mini";
 
-function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[]) {
+function buildSystemPrompt(studyGoal: string, questions: { text: string; description: string; choices: string[] }[], customInstructions?: string) {
   const questionsList = questions.length > 0
     ? questions.map((q, i) => {
         let line = `${i + 1}. "${q.text || "(untitled)"}"`;
@@ -72,7 +72,7 @@ Rules for EDIT_QUESTION:
 - "text", "description", "required", "choices" — all optional, only include fields that need to change
 - You may include multiple [EDIT_QUESTION: ...] tags to edit multiple questions at once
 - Always describe the changes you're making in your regular response text BEFORE the tags
-- Only include these tags when the user explicitly asks to edit, modify, change, or update existing questions`;
+- Only include these tags when the user explicitly asks to edit, modify, change, or update existing questions${customInstructions ? `\n\nADDITIONAL CUSTOM INSTRUCTIONS FROM THE USER:\n${customInstructions}` : ""}`;
 }
 
 // Initial conversation context so the model knows what was discussed
@@ -150,14 +150,15 @@ const server = serve({
 
     "/api/chat": {
       async POST(req) {
-        const { messages, studyGoal, questions } = (await req.json()) as {
+        const { messages, studyGoal, questions, customSystemPrompt } = (await req.json()) as {
           messages: { role: string; content: string }[];
           studyGoal?: string;
           questions?: { text: string; description: string; choices: string[] }[];
+          customSystemPrompt?: string;
         };
 
         const fullMessages = [
-          { role: "system", content: buildSystemPrompt(studyGoal || "The goal of this study is to understand why some creators delay or avoid sharing their Linktree.", questions || []) },
+          { role: "system", content: buildSystemPrompt(studyGoal || "The goal of this study is to understand why some creators delay or avoid sharing their Linktree.", questions || [], customSystemPrompt || undefined) },
           ...INITIAL_MESSAGES,
           ...messages,
         ];
